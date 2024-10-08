@@ -54,8 +54,12 @@ from pygeoapi.util import (
     to_json, filter_dict_by_key_value
 )
 
-from . import (APIRequest, API, F_COVERAGEJSON, F_HTML, F_JSONLD,
+from . import (APIRequest, API, F_COVERAGEJSON, F_HTML, F_JSONLD, F_NETCDF, FORMAT_TYPES,
                validate_datetime, validate_bbox)
+
+import tempfile
+import xarray as xr
+from flask import send_file
 
 LOGGER = logging.getLogger(__name__)
 
@@ -231,6 +235,11 @@ def get_collection_edr_query(api: API, request: APIRequest,
         content = render_j2_template(api.tpl_config,
                                      'collections/edr/query.html', data,
                                      api.default_locale)
+    elif request.format == F_NETCDF:
+        tmpfile = tempfile.NamedTemporaryFile()
+        content = data.to_netcdf(path=tmpfile.name, format='NETCDF4', engine='netcdf4')
+        resp = send_file(tmpfile, download_name='data.nc', as_attachment=True, mimetype=FORMAT_TYPES[F_NETCDF])
+        return resp.headers, resp.status, resp 
     else:
         content = to_json(data, api.pretty_print)
 
