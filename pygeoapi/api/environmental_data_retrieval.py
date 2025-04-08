@@ -198,14 +198,15 @@ def get_collection_edr_query(api: API, request: APIRequest, dataset, instance, q
 
         content = render_j2_template(api.tpl_config, "collections/edr/query.html", data, api.default_locale)
     elif request.format == F_NETCDF:
-        tmpfile = tempfile.NamedTemporaryFile()
+        tmpfile = tempfile.NamedTemporaryFile()  # TODO: this file is not deleted and will build up in the filesystem
         content = data.to_netcdf(path=tmpfile.name, format="NETCDF4", engine="netcdf4")
         resp = send_file(tmpfile, download_name="data.nc", as_attachment=True, mimetype=FORMAT_TYPES[F_NETCDF])
         return resp.headers, resp.status, resp
     elif request.format == F_BUFR:
-        tmpfile = tempfile.NamedTemporaryFile()
+        tmpfile = tempfile.NamedTemporaryFile()  # TODO: this file is not deleted and will build up in the filesystem
         eccodes.codes_write(data, tmpfile)
         resp = send_file(tmpfile, download_name="data.bufr", as_attachment=True, mimetype="application/x-bufr")
+        eccodes.codes_release(data)
         return resp.headers, resp.status, resp
     else:
         content = to_json(data, api.pretty_print)
