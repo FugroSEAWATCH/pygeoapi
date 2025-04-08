@@ -16,3 +16,4 @@ requests
 shapely
 SQLAlchemy<2.0.0
 tinydb
+eccodes==2.40.1

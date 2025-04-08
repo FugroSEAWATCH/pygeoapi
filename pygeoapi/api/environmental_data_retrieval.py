@@ -49,28 +49,21 @@ from shapely.wkt import loads as shapely_loads
 from pygeoapi import l10n
 from pygeoapi.plugin import load_plugin, PLUGINS
 from pygeoapi.provider.base import ProviderGenericError
-from pygeoapi.util import (
-    filter_providers_by_type, get_provider_by_type, render_j2_template,
-    to_json, filter_dict_by_key_value
-)
+from pygeoapi.util import filter_providers_by_type, get_provider_by_type, render_j2_template, to_json, filter_dict_by_key_value
 
-from . import (APIRequest, API, F_COVERAGEJSON, F_HTML, F_JSONLD, F_NETCDF, FORMAT_TYPES,
-               validate_datetime, validate_bbox)
+from . import APIRequest, API, F_COVERAGEJSON, F_HTML, F_JSONLD, F_NETCDF, F_BUFR, FORMAT_TYPES, validate_datetime, validate_bbox
 
 import tempfile
 import xarray as xr
 from flask import send_file
+import eccodes
 
 LOGGER = logging.getLogger(__name__)
 
-CONFORMANCE_CLASSES = [
-    'http://www.opengis.net/spec/ogcapi-edr-1/1.0/conf/core'
-]
+CONFORMANCE_CLASSES = ["http://www.opengis.net/spec/ogcapi-edr-1/1.0/conf/core"]
 
 
-def get_collection_edr_query(api: API, request: APIRequest,
-                             dataset, instance, query_type,
-                             location_id=None) -> Tuple[dict, int, str]:
+def get_collection_edr_query(api: API, request: APIRequest, dataset, instance, query_type, location_id=None) -> Tuple[dict, int, str]:
     """
     Queries collection EDR
 
@@ -83,101 +76,79 @@ def get_collection_edr_query(api: API, request: APIRequest,
     :returns: tuple of headers, status code, content
     """
 
-    if not request.is_valid(PLUGINS['formatter'].keys()):
+    if not request.is_valid(PLUGINS["formatter"].keys()):
         return api.get_format_exception(request)
-    headers = request.get_response_headers(api.default_locale,
-                                           **api.api_headers)
-    collections = filter_dict_by_key_value(api.config['resources'],
-                                           'type', 'collection')
+    headers = request.get_response_headers(api.default_locale, **api.api_headers)
+    collections = filter_dict_by_key_value(api.config["resources"], "type", "collection")
 
     if dataset not in collections.keys():
-        msg = 'Collection not found'
-        return api.get_exception(
-            HTTPStatus.NOT_FOUND, headers, request.format, 'NotFound', msg)
+        msg = "Collection not found"
+        return api.get_exception(HTTPStatus.NOT_FOUND, headers, request.format, "NotFound", msg)
 
-    LOGGER.debug('Loading provider')
+    LOGGER.debug("Loading provider")
     try:
-        p = load_plugin('provider', get_provider_by_type(
-            collections[dataset]['providers'], 'edr'))
+        p = load_plugin("provider", get_provider_by_type(collections[dataset]["providers"], "edr"))
     except ProviderGenericError as err:
-        return api.get_exception(
-            err.http_status_code, headers, request.format,
-            err.ogc_exception_code, err.message)
+        return api.get_exception(err.http_status_code, headers, request.format, err.ogc_exception_code, err.message)
 
     if instance is not None and not p.get_instance(instance):
-        msg = 'Invalid instance identifier'
-        return api.get_exception(
-            HTTPStatus.BAD_REQUEST, headers,
-            request.format, 'InvalidParameterValue', msg)
+        msg = "Invalid instance identifier"
+        return api.get_exception(HTTPStatus.BAD_REQUEST, headers, request.format, "InvalidParameterValue", msg)
 
     if query_type not in p.get_query_types():
-        msg = 'Unsupported query type'
-        return api.get_exception(
-            HTTPStatus.BAD_REQUEST, headers, request.format,
-            'InvalidParameterValue', msg)
+        msg = "Unsupported query type"
+        return api.get_exception(HTTPStatus.BAD_REQUEST, headers, request.format, "InvalidParameterValue", msg)
 
-    LOGGER.debug('Processing query parameters')
+    LOGGER.debug("Processing query parameters")
 
-    LOGGER.debug('Processing datetime parameter')
-    datetime_ = request.params.get('datetime')
+    LOGGER.debug("Processing datetime parameter")
+    datetime_ = request.params.get("datetime")
     try:
-        datetime_ = validate_datetime(collections[dataset]['extents'],
-                                      datetime_)
+        datetime_ = validate_datetime(collections[dataset]["extents"], datetime_)
     except ValueError as err:
         msg = str(err)
-        return api.get_exception(
-            HTTPStatus.BAD_REQUEST, headers, request.format,
-            'InvalidParameterValue', msg)
+        return api.get_exception(HTTPStatus.BAD_REQUEST, headers, request.format, "InvalidParameterValue", msg)
 
-    LOGGER.debug('Processing parameter-name parameter')
-    parameternames = request.params.get('parameter-name') or []
+    LOGGER.debug("Processing parameter-name parameter")
+    parameternames = request.params.get("parameter-name") or []
     if isinstance(parameternames, str):
-        parameternames = parameternames.split(',')
+        parameternames = parameternames.split(",")
 
     bbox = None
-    if query_type in ['cube', 'locations']:
-        LOGGER.debug('Processing cube bbox')
+    if query_type in ["cube", "locations"]:
+        LOGGER.debug("Processing cube bbox")
         try:
-            bbox = validate_bbox(request.params.get('bbox'))
-            if not bbox and query_type == 'cube':
-                raise ValueError('bbox parameter required by cube queries')
+            bbox = validate_bbox(request.params.get("bbox"))
+            if not bbox and query_type == "cube":
+                raise ValueError("bbox parameter required by cube queries")
         except ValueError as err:
-            return api.get_exception(
-                HTTPStatus.BAD_REQUEST, headers, request.format,
-                'InvalidParameterValue', str(err))
+            return api.get_exception(HTTPStatus.BAD_REQUEST, headers, request.format, "InvalidParameterValue", str(err))
 
-    LOGGER.debug('Processing coords parameter')
-    wkt = request.params.get('coords')
+    LOGGER.debug("Processing coords parameter")
+    wkt = request.params.get("coords")
 
     if wkt:
         try:
             wkt = shapely_loads(wkt)
         except ShapelyError:
-            msg = 'invalid coords parameter'
-            return api.get_exception(
-                HTTPStatus.BAD_REQUEST, headers, request.format,
-                'InvalidParameterValue', msg)
-    elif query_type not in ['cube', 'locations']:
-        msg = 'missing coords parameter'
-        return api.get_exception(
-            HTTPStatus.BAD_REQUEST, headers, request.format,
-            'InvalidParameterValue', msg)
+            msg = "invalid coords parameter"
+            return api.get_exception(HTTPStatus.BAD_REQUEST, headers, request.format, "InvalidParameterValue", msg)
+    elif query_type not in ["cube", "locations"]:
+        msg = "missing coords parameter"
+        return api.get_exception(HTTPStatus.BAD_REQUEST, headers, request.format, "InvalidParameterValue", msg)
 
     within = within_units = None
-    if query_type == 'radius':
-        LOGGER.debug('Processing within / within-units parameters')
-        within = request.params.get('within')
-        within_units = request.params.get('within-units')
+    if query_type == "radius":
+        LOGGER.debug("Processing within / within-units parameters")
+        within = request.params.get("within")
+        within_units = request.params.get("within-units")
 
-    LOGGER.debug('Processing z parameter')
-    z = request.params.get('z')
+    LOGGER.debug("Processing z parameter")
+    z = request.params.get("z")
 
-    if parameternames and not any((fld in parameternames)
-                                  for fld in p.get_fields().keys()):
-        msg = 'Invalid parameter-name'
-        return api.get_exception(
-            HTTPStatus.BAD_REQUEST, headers, request.format,
-            'InvalidParameterValue', msg)
+    if parameternames and not any((fld in parameternames) for fld in p.get_fields().keys()):
+        msg = "Invalid parameter-name"
+        return api.get_exception(HTTPStatus.BAD_REQUEST, headers, request.format, "InvalidParameterValue", msg)
 
     query_args = dict(
         query_type=query_type,
@@ -190,56 +161,52 @@ def get_collection_edr_query(api: API, request: APIRequest,
         bbox=bbox,
         within=within,
         within_units=within_units,
-        limit=int(api.config['server']['limit']),
+        limit=int(api.config["server"]["limit"]),
         location_id=location_id,
     )
 
     try:
         data = p.query(**query_args)
     except ProviderGenericError as err:
-        return api.get_exception(
-            err.http_status_code, headers, request.format,
-            err.ogc_exception_code, err.message)
+        return api.get_exception(err.http_status_code, headers, request.format, err.ogc_exception_code, err.message)
 
     if request.format == F_HTML:  # render
-        uri = f'{api.get_collections_url()}/{dataset}/{query_type}'
-        serialized_query_params = ''
+        uri = f"{api.get_collections_url()}/{dataset}/{query_type}"
+        serialized_query_params = ""
         for k, v in request.params.items():
-            if k != 'f':
-                serialized_query_params += '&'
-                serialized_query_params += urllib.parse.quote(k, safe='')
-                serialized_query_params += '='
-                serialized_query_params += urllib.parse.quote(str(v), safe=',')
+            if k != "f":
+                serialized_query_params += "&"
+                serialized_query_params += urllib.parse.quote(k, safe="")
+                serialized_query_params += "="
+                serialized_query_params += urllib.parse.quote(str(v), safe=",")
 
-        data['query_type'] = query_type.capitalize()
-        data['query_path'] = uri
-        data['dataset_path'] = '/'.join(uri.split('/')[:-1])
-        data['collections_path'] = api.get_collections_url()
+        data["query_type"] = query_type.capitalize()
+        data["query_path"] = uri
+        data["dataset_path"] = "/".join(uri.split("/")[:-1])
+        data["collections_path"] = api.get_collections_url()
 
-        data['links'] = [{
-            'rel': 'collection',
-            'title': collections[dataset]['title'],
-            'href': data['dataset_path']
-        }, {
-            'type': 'application/prs.coverage+json',
-            'rel': request.get_linkrel(F_COVERAGEJSON),
-            'title': l10n.translate('This document as CoverageJSON', request.locale),  # noqa
-            'href': f'{uri}?f={F_COVERAGEJSON}{serialized_query_params}'
-        }, {
-            'type': 'application/ld+json',
-            'rel': 'alternate',
-            'title': l10n.translate('This document as JSON-LD', request.locale),  # noqa
-            'href': f'{uri}?f={F_JSONLD}{serialized_query_params}'
-        }]
+        data["links"] = [
+            {"rel": "collection", "title": collections[dataset]["title"], "href": data["dataset_path"]},
+            {
+                "type": "application/prs.coverage+json",
+                "rel": request.get_linkrel(F_COVERAGEJSON),
+                "title": l10n.translate("This document as CoverageJSON", request.locale),  # noqa
+                "href": f"{uri}?f={F_COVERAGEJSON}{serialized_query_params}",
+            },
+            {"type": "application/ld+json", "rel": "alternate", "title": l10n.translate("This document as JSON-LD", request.locale), "href": f"{uri}?f={F_JSONLD}{serialized_query_params}"},  # noqa
+        ]
 
-        content = render_j2_template(api.tpl_config,
-                                     'collections/edr/query.html', data,
-                                     api.default_locale)
+        content = render_j2_template(api.tpl_config, "collections/edr/query.html", data, api.default_locale)
     elif request.format == F_NETCDF:
         tmpfile = tempfile.NamedTemporaryFile()
-        content = data.to_netcdf(path=tmpfile.name, format='NETCDF4', engine='netcdf4')
-        resp = send_file(tmpfile, download_name='data.nc', as_attachment=True, mimetype=FORMAT_TYPES[F_NETCDF])
-        return resp.headers, resp.status, resp 
+        content = data.to_netcdf(path=tmpfile.name, format="NETCDF4", engine="netcdf4")
+        resp = send_file(tmpfile, download_name="data.nc", as_attachment=True, mimetype=FORMAT_TYPES[F_NETCDF])
+        return resp.headers, resp.status, resp
+    elif request.format == F_BUFR:
+        tmpfile = tempfile.NamedTemporaryFile()
+        eccodes.codes_write(data, tmpfile)
+        resp = send_file(tmpfile, download_name="data.bufr", as_attachment=True, mimetype="application/x-bufr")
+        return resp.headers, resp.status, resp
     else:
         content = to_json(data, api.pretty_print)
 
@@ -258,113 +225,85 @@ def get_oas_30(cfg: dict, locale: str) -> tuple[list[dict[str, str]], dict[str, 
 
     from pygeoapi.openapi import OPENAPI_YAML, get_visible_collections
 
-    LOGGER.debug('setting up edr endpoints')
+    LOGGER.debug("setting up edr endpoints")
 
     paths = {}
 
-    collections = filter_dict_by_key_value(cfg['resources'],
-                                           'type', 'collection')
+    collections = filter_dict_by_key_value(cfg["resources"], "type", "collection")
 
     for k, v in get_visible_collections(cfg).items():
-        edr_extension = filter_providers_by_type(
-            collections[k]['providers'], 'edr')
+        edr_extension = filter_providers_by_type(collections[k]["providers"], "edr")
 
         if edr_extension:
-            collection_name_path = f'/collections/{k}'
+            collection_name_path = f"/collections/{k}"
 
-            ep = load_plugin('provider', edr_extension)
+            ep = load_plugin("provider", edr_extension)
 
             edr_query_endpoints = []
 
-            for qt in [qt for qt in ep.get_query_types() if qt != 'locations']:
-                edr_query_endpoints.append({
-                    'path': f'{collection_name_path}/{qt}',
-                    'qt': qt,
-                    'op_id': f'query{qt.capitalize()}{k.capitalize()}'
-                })
+            for qt in [qt for qt in ep.get_query_types() if qt != "locations"]:
+                edr_query_endpoints.append({"path": f"{collection_name_path}/{qt}", "qt": qt, "op_id": f"query{qt.capitalize()}{k.capitalize()}"})
                 if ep.instances:
-                    edr_query_endpoints.append({
-                        'path': f'{collection_name_path}/instances/{{instanceId}}/{qt}',  # noqa
-                        'qt': qt,
-                        'op_id': f'query{qt.capitalize()}Instance{k.capitalize()}'  # noqa
-                    })
+                    edr_query_endpoints.append({"path": f"{collection_name_path}/instances/{{instanceId}}/{qt}", "qt": qt, "op_id": f"query{qt.capitalize()}Instance{k.capitalize()}"})  # noqa  # noqa
 
             for eqe in edr_query_endpoints:
-                if eqe['qt'] == 'cube':
-                    spatial_parameter = 'bbox'
+                if eqe["qt"] == "cube":
+                    spatial_parameter = "bbox"
                 else:
                     spatial_parameter = f"{eqe['qt']}Coords"
-                paths[eqe['path']] = {
-                    'get': {
-                        'summary': f"query {v['description']} by {eqe['qt']}",
-                        'description': v['description'],
-                        'tags': [k],
-                        'operationId': eqe['op_id'],
-                        'parameters': [
-                            {'$ref': f"{OPENAPI_YAML['oaedr']}/parameters/{spatial_parameter}.yaml"},  # noqa
-                            {'$ref': f"{OPENAPI_YAML['oapif-1']}#/components/parameters/datetime"},  # noqa
-                            {'$ref': f"{OPENAPI_YAML['oaedr']}/parameters/parameter-name.yaml"},  # noqa
-                            {'$ref': f"{OPENAPI_YAML['oaedr']}/parameters/z.yaml"},  # noqa
-                            {'$ref': '#/components/parameters/f'}
+                paths[eqe["path"]] = {
+                    "get": {
+                        "summary": f"query {v['description']} by {eqe['qt']}",
+                        "description": v["description"],
+                        "tags": [k],
+                        "operationId": eqe["op_id"],
+                        "parameters": [
+                            {"$ref": f"{OPENAPI_YAML['oaedr']}/parameters/{spatial_parameter}.yaml"},  # noqa
+                            {"$ref": f"{OPENAPI_YAML['oapif-1']}#/components/parameters/datetime"},  # noqa
+                            {"$ref": f"{OPENAPI_YAML['oaedr']}/parameters/parameter-name.yaml"},  # noqa
+                            {"$ref": f"{OPENAPI_YAML['oaedr']}/parameters/z.yaml"},  # noqa
+                            {"$ref": "#/components/parameters/f"},
                         ],
-                        'responses': {
-                            '200': {
-                                'description': 'Response',
-                                'content': {
-                                    'application/prs.coverage+json': {
-                                        'schema': {
-                                            '$ref': f"{OPENAPI_YAML['oaedr']}/schemas/coverageJSON.yaml"  # noqa
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                        "responses": {
+                            "200": {"description": "Response", "content": {"application/prs.coverage+json": {"schema": {"$ref": f"{OPENAPI_YAML['oaedr']}/schemas/coverageJSON.yaml"}}}}  # noqa
+                        },
                     }
                 }
-            if 'locations' in ep.get_query_types():
-                paths[f'{collection_name_path}/locations'] = {
-                    'get': {
-                        'summary': f"Get pre-defined locations of {v['description']}",  # noqa
-                        'description': v['description'],
-                        'tags': [k],
-                        'operationId': f'queryLOCATIONS{k.capitalize()}',
-                        'parameters': [
-                            {'$ref': f"{OPENAPI_YAML['oaedr']}/parameters/bbox.yaml"},  # noqa
-                            {'$ref': f"{OPENAPI_YAML['oapif-1']}#/components/parameters/datetime"},  # noqa
-                            {'$ref': '#/components/parameters/f'}
+            if "locations" in ep.get_query_types():
+                paths[f"{collection_name_path}/locations"] = {
+                    "get": {
+                        "summary": f"Get pre-defined locations of {v['description']}",  # noqa
+                        "description": v["description"],
+                        "tags": [k],
+                        "operationId": f"queryLOCATIONS{k.capitalize()}",
+                        "parameters": [
+                            {"$ref": f"{OPENAPI_YAML['oaedr']}/parameters/bbox.yaml"},  # noqa
+                            {"$ref": f"{OPENAPI_YAML['oapif-1']}#/components/parameters/datetime"},  # noqa
+                            {"$ref": "#/components/parameters/f"},
                         ],
-                        'responses': {
-                            '200': {'$ref': f"{OPENAPI_YAML['oapif-1']}#/components/responses/Features"},  # noqa
-                            '400': {'$ref': f"{OPENAPI_YAML['oapif-1']}#/components/responses/InvalidParameter"},  # noqa
-                            '500': {'$ref': f"{OPENAPI_YAML['oapif-1']}#/components/responses/ServerError"}  # noqa
-                        }
+                        "responses": {
+                            "200": {"$ref": f"{OPENAPI_YAML['oapif-1']}#/components/responses/Features"},  # noqa
+                            "400": {"$ref": f"{OPENAPI_YAML['oapif-1']}#/components/responses/InvalidParameter"},  # noqa
+                            "500": {"$ref": f"{OPENAPI_YAML['oapif-1']}#/components/responses/ServerError"},  # noqa
+                        },
                     }
                 }
-                paths[f'{collection_name_path}/locations/{{locId}}'] = {
-                    'get': {
-                        'summary': f"query {v['description']} by location",
-                        'description': v['description'],
-                        'tags': [k],
-                        'operationId': f'queryLOCATIONSBYID{k.capitalize()}',
-                        'parameters': [
-                            {'$ref': f"{OPENAPI_YAML['oaedr']}/parameters/locationId.yaml"},  # noqa
-                            {'$ref': f"{OPENAPI_YAML['oapif-1']}#/components/parameters/datetime"},  # noqa
-                            {'$ref': f"{OPENAPI_YAML['oaedr']}/parameters/parameter-name.yaml"},  # noqa
-                            {'$ref': '#/components/parameters/f'}
+                paths[f"{collection_name_path}/locations/{{locId}}"] = {
+                    "get": {
+                        "summary": f"query {v['description']} by location",
+                        "description": v["description"],
+                        "tags": [k],
+                        "operationId": f"queryLOCATIONSBYID{k.capitalize()}",
+                        "parameters": [
+                            {"$ref": f"{OPENAPI_YAML['oaedr']}/parameters/locationId.yaml"},  # noqa
+                            {"$ref": f"{OPENAPI_YAML['oapif-1']}#/components/parameters/datetime"},  # noqa
+                            {"$ref": f"{OPENAPI_YAML['oaedr']}/parameters/parameter-name.yaml"},  # noqa
+                            {"$ref": "#/components/parameters/f"},
                         ],
-                        'responses': {
-                            '200': {
-                                'description': 'Response',
-                                'content': {
-                                    'application/prs.coverage+json': {
-                                        'schema': {
-                                            '$ref': f"{OPENAPI_YAML['oaedr']}/schemas/coverageJSON.yaml"  # noqa
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                        "responses": {
+                            "200": {"description": "Response", "content": {"application/prs.coverage+json": {"schema": {"$ref": f"{OPENAPI_YAML['oaedr']}/schemas/coverageJSON.yaml"}}}}  # noqa
+                        },
                     }
                 }
 
-    return [{'name': 'edr'}], {'paths': paths}
+    return [{"name": "edr"}], {"paths": paths}
