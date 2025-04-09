@@ -205,7 +205,7 @@ def get_collection_edr_query(api: API, request: APIRequest, dataset, instance, q
     elif request.format == F_BUFR:
         tmpfile = tempfile.NamedTemporaryFile()  # TODO: this file is not deleted and will build up in the filesystem
         eccodes.codes_write(data, tmpfile)
-        resp = send_file(tmpfile, download_name="data.bufr", as_attachment=True, mimetype="application/x-bufr")
+        resp = send_file(tmpfile, download_name="data.bufr", as_attachment=True, mimetype=FORMAT_TYPES[F_BUFR])
         eccodes.codes_release(data)
         return resp.headers, resp.status, resp
     else:

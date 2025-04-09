@@ -106,6 +106,7 @@ FORMAT_TYPES = OrderedDict(
         (F_JPEG, "image/jpeg"),
         (F_MVT, "application/vnd.mapbox-vector-tile"),
         (F_NETCDF, "application/x-netcdf"),
+        (F_BUFR, "application/x-bufr"),
     )
 )
 

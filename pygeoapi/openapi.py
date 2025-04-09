@@ -482,7 +482,7 @@ def get_oas_30_parameters(cfg: dict, locale_: str):
                 'required': False,
                 'schema': {
                     'type': 'string',
-                    'enum': ['json', 'html', 'jsonld'],
+                    'enum': ['json', 'html', 'jsonld', 'NetCDF', 'bufr'],
                     'default': 'json'
                 },
                 'style': 'form',
