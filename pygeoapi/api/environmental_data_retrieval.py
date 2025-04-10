@@ -203,10 +203,13 @@ def get_collection_edr_query(api: API, request: APIRequest, dataset, instance, q
         resp = send_file(tmpfile, download_name="data.nc", as_attachment=True, mimetype=FORMAT_TYPES[F_NETCDF])
         return resp.headers, resp.status, resp
     elif request.format == F_BUFR:
-        tmpfile = tempfile.NamedTemporaryFile()  # TODO: this file is not deleted and will build up in the filesystem
-        eccodes.codes_write(data, tmpfile)
-        resp = send_file(tmpfile, download_name="data.bufr", as_attachment=True, mimetype=FORMAT_TYPES[F_BUFR])
+        with tempfile.NamedTemporaryFile(delete=False, mode="w+b", suffix=".bufr") as tmpfile:
+            eccodes.codes_write(data, tmpfile)
+            tmpfile.flush()
+            tmpfile_path = tmpfile.name
+
         eccodes.codes_release(data)
+        resp = send_file(tmpfile_path, download_name="data.bufr", as_attachment=True, mimetype=FORMAT_TYPES[F_BUFR])
         return resp.headers, resp.status, resp
     else:
         content = to_json(data, api.pretty_print)
