@@ -215,7 +215,7 @@ def get_collection_edr_query(api: API, request: APIRequest, dataset, instance, q
     elif request.format == F_CSV:
         # data = xarray.Dataset
         tmpfile = tempfile.NamedTemporaryFile()  # TODO: this file is not deleted and will build up in the filesystem
-        content = data.to_dataframe().to_csv(tmpfile.name, index=False)
+        content = data.to_dataframe().to_csv(tmpfile.name, index=True)
         resp = send_file(tmpfile, download_name="data.csv", as_attachment=True, mimetype=FORMAT_TYPES[F_CSV])
         return resp.headers, resp.status, resp
     else:
