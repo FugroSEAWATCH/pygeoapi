@@ -51,7 +51,7 @@ from pygeoapi.plugin import load_plugin, PLUGINS
 from pygeoapi.provider.base import ProviderGenericError
 from pygeoapi.util import filter_providers_by_type, get_provider_by_type, render_j2_template, to_json, filter_dict_by_key_value
 
-from . import APIRequest, API, F_COVERAGEJSON, F_HTML, F_JSONLD, F_NETCDF, F_BUFR, FORMAT_TYPES, validate_datetime, validate_bbox
+from . import APIRequest, API, F_COVERAGEJSON, F_HTML, F_JSONLD, F_NETCDF, F_BUFR, F_CSV, FORMAT_TYPES, validate_datetime, validate_bbox
 
 import tempfile
 import xarray as xr
@@ -198,6 +198,7 @@ def get_collection_edr_query(api: API, request: APIRequest, dataset, instance, q
 
         content = render_j2_template(api.tpl_config, "collections/edr/query.html", data, api.default_locale)
     elif request.format == F_NETCDF:
+        # data = xarray.Dataset
         tmpfile = tempfile.NamedTemporaryFile()  # TODO: this file is not deleted and will build up in the filesystem
         content = data.to_netcdf(path=tmpfile.name, format="NETCDF4", engine="netcdf4")
         resp = send_file(tmpfile, download_name="data.nc", as_attachment=True, mimetype=FORMAT_TYPES[F_NETCDF])
@@ -210,6 +211,12 @@ def get_collection_edr_query(api: API, request: APIRequest, dataset, instance, q
 
         eccodes.codes_release(data)
         resp = send_file(tmpfile_path, download_name="data.bufr", as_attachment=True, mimetype=FORMAT_TYPES[F_BUFR])
+        return resp.headers, resp.status, resp
+    elif request.format == F_CSV:
+        # data = xarray.Dataset
+        tmpfile = tempfile.NamedTemporaryFile()  # TODO: this file is not deleted and will build up in the filesystem
+        content = data.to_dataframe().to_csv(tmpfile.name, index=False)
+        resp = send_file(tmpfile, download_name="data.csv", as_attachment=True, mimetype=FORMAT_TYPES[F_CSV])
         return resp.headers, resp.status, resp
     else:
         content = to_json(data, api.pretty_print)

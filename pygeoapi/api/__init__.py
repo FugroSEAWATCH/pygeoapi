@@ -95,6 +95,7 @@ F_JPEG = "jpeg"
 F_MVT = "mvt"
 F_NETCDF = "NetCDF"
 F_BUFR = "bufr"
+F_CSV = "csv"
 
 #: Formats allowed for ?f= requests (order matters for complex MIME types)
 FORMAT_TYPES = OrderedDict(
@@ -107,6 +108,7 @@ FORMAT_TYPES = OrderedDict(
         (F_MVT, "application/vnd.mapbox-vector-tile"),
         (F_NETCDF, "application/x-netcdf"),
         (F_BUFR, "application/x-bufr"),
+        (F_CSV, "text/csv"),
     )
 )
 
